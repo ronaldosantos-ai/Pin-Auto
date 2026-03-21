@@ -2,11 +2,41 @@ import { Router, type IRouter } from "express";
 import { resolve as dnsResolve } from "node:dns/promises";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { z } from "zod/v4";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { db, generationsTable } from "@workspace/db";
 import { GeneratePinAssetsBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+const ProductAISchema = z.object({
+  title: z.string().min(1),
+  price: z.string().optional().default(""),
+  description: z.string().optional().default(""),
+  imageUrl: z.string().optional().default(""),
+});
+
+const VisionAnalysisSchema = z.object({
+  technicalDescription: z.string().min(1),
+  imagePrompt: z.string().min(1),
+});
+
+const SEOPackSchema = z.object({
+  titles: z.array(z.string()).min(1),
+  description: z.string().min(1),
+  altText: z.string().min(1),
+  urgencyOverlays: z.array(z.string()),
+  hashtags: z.string(),
+});
+
+function parseAIJson<T>(schema: z.ZodType<T>, raw: string): T {
+  const cleaned = raw.replace(/```json\n?|\n?```/g, "").trim();
+  const parsed = schema.safeParse(JSON.parse(cleaned));
+  if (!parsed.success) {
+    throw new Error(`AI response schema mismatch: ${z.prettifyError(parsed.error)}`);
+  }
+  return parsed.data;
+}
 
 const PRIVATE_IP_RANGES = [
   /^127\./,
@@ -177,12 +207,11 @@ Retorne APENAS o JSON, sem markdown.`,
   });
 
   const content = response.choices[0]?.message?.content || "{}";
-  const cleaned = content.replace(/```json\n?|\n?```/g, "").trim();
-  const data = JSON.parse(cleaned);
+  const data = parseAIJson(ProductAISchema, content);
   return {
     title: data.title || url,
-    price: data.price || "",
-    description: data.description || "",
+    price: data.price,
+    description: data.description,
     imageUrl: "",
     originalUrl: url,
   };
@@ -225,8 +254,7 @@ Retorne APENAS o JSON, sem markdown ou explicações.`;
   });
 
   const content = response.choices[0]?.message?.content || "{}";
-  const cleaned = content.replace(/```json\n?|\n?```/g, "").trim();
-  return JSON.parse(cleaned);
+  return parseAIJson(VisionAnalysisSchema, content);
 }
 
 async function generateSEOPack(product: {
@@ -271,8 +299,7 @@ Retorne APENAS o JSON, sem markdown.`,
   });
 
   const content = response.choices[0]?.message?.content || "{}";
-  const cleaned = content.replace(/```json\n?|\n?```/g, "").trim();
-  return JSON.parse(cleaned);
+  return parseAIJson(SEOPackSchema, content);
 }
 
 async function generateLifestyleImage(imagePrompt: string): Promise<string | null> {
