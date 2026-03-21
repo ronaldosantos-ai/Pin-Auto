@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { resolve as dnsResolve } from "node:dns/promises";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -6,6 +7,56 @@ import { db, generationsTable } from "@workspace/db";
 import { GeneratePinAssetsBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+const PRIVATE_IP_RANGES = [
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^::1$/,
+  /^fc00:/i,
+  /^fe80:/i,
+];
+
+function isPrivateIp(ip: string): boolean {
+  return PRIVATE_IP_RANGES.some((re) => re.test(ip));
+}
+
+async function validatePublicUrl(rawUrl: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("URL inválida");
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Apenas URLs http e https são suportadas");
+  }
+
+  const hostname = parsed.hostname;
+
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+    if (isPrivateIp(hostname)) {
+      throw new Error("URL aponta para endereço privado");
+    }
+    return;
+  }
+
+  let addresses: string[];
+  try {
+    addresses = await dnsResolve(hostname);
+  } catch {
+    throw new Error("Não foi possível resolver o domínio");
+  }
+
+  for (const addr of addresses) {
+    if (isPrivateIp(addr)) {
+      throw new Error("URL resolve para endereço privado");
+    }
+  }
+}
 
 async function scrapeProduct(url: string) {
   const headers = {
@@ -123,48 +174,7 @@ async function analyzeProductWithAI(product: {
   imageUrl: string;
   originalUrl: string;
 }) {
-  const messages: Array<{
-    role: "user" | "system";
-    content:
-      | string
-      | Array<{
-          type: string;
-          text?: string;
-          image_url?: { url: string };
-        }>;
-  }> = [];
-
-  if (product.imageUrl) {
-    messages.push({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: `Você é um especialista em análise de produtos para Pinterest. Analise este produto e gere uma descrição técnica detalhada da imagem para ser usada como prompt de geração de imagem lifestyle.
-
-Produto: ${product.title}
-Preço: ${product.price || "N/A"}
-Descrição: ${product.description || "N/A"}
-URL: ${product.originalUrl}
-
-Analise a imagem do produto e retorne um JSON com:
-{
-  "technicalDescription": "descrição técnica extremamente detalhada da peça/produto: materiais, cores, forma, detalhes visuais marcantes, acabamentos, etc.",
-  "imagePrompt": "prompt em inglês para gerar uma imagem lifestyle fotorrealista com uma pessoa usando/segurando/interagindo com o produto em um ambiente moderno e aspiracional. O prompt deve ser muito específico sobre o produto e criar uma cena lifestyle atraente para Pinterest."
-}
-
-Retorne APENAS o JSON, sem markdown ou explicações.`,
-        },
-        {
-          type: "image_url",
-          image_url: { url: product.imageUrl },
-        },
-      ],
-    });
-  } else {
-    messages.push({
-      role: "user",
-      content: `Você é um especialista em análise de produtos para Pinterest. Analise este produto e gere uma descrição técnica e um prompt de imagem lifestyle.
+  const systemPrompt = `Você é um especialista em análise de produtos para Pinterest. Analise este produto e gere uma descrição técnica detalhada da imagem para ser usada como prompt de geração de imagem lifestyle.
 
 Produto: ${product.title}
 Preço: ${product.price || "N/A"}
@@ -173,18 +183,24 @@ URL: ${product.originalUrl}
 
 Retorne um JSON com:
 {
-  "technicalDescription": "descrição técnica detalhada do produto baseada nas informações disponíveis: materiais, cores, forma, detalhes visuais marcantes, acabamentos, etc.",
+  "technicalDescription": "descrição técnica extremamente detalhada da peça/produto: materiais, cores, forma, detalhes visuais marcantes, acabamentos, etc.",
   "imagePrompt": "prompt em inglês para gerar uma imagem lifestyle fotorrealista com uma pessoa usando/segurando/interagindo com o produto em um ambiente moderno e aspiracional."
 }
 
-Retorne APENAS o JSON, sem markdown ou explicações.`,
-    });
-  }
+Retorne APENAS o JSON, sem markdown ou explicações.`;
+
+  const userContent: Parameters<typeof openai.chat.completions.create>[0]["messages"][number]["content"] =
+    product.imageUrl
+      ? [
+          { type: "text", text: systemPrompt },
+          { type: "image_url", image_url: { url: product.imageUrl } },
+        ]
+      : systemPrompt;
 
   const response = await openai.chat.completions.create({
     model: "gpt-5.2",
     max_completion_tokens: 8192,
-    messages,
+    messages: [{ role: "user", content: userContent }],
   });
 
   const content = response.choices[0]?.message?.content || "{}";
@@ -244,9 +260,10 @@ async function generateLifestyleImage(imagePrompt: string): Promise<string | nul
       model: "gpt-image-1",
       prompt: imagePrompt,
       size: "1024x1024",
-    } as Parameters<typeof openai.images.generate>[0]);
+    });
 
-    const b64 = (response.data[0] as { b64_json?: string })?.b64_json;
+    const data = (response as { data?: Array<{ b64_json?: string }> }).data;
+    const b64 = data?.[0]?.b64_json;
     if (b64) {
       return `data:image/png;base64,${b64}`;
     }
@@ -265,6 +282,16 @@ router.post("/generate", async (req, res) => {
     }
 
     const { url } = parsed.data;
+
+    try {
+      await validatePublicUrl(url);
+    } catch (validationErr) {
+      res.status(400).json({
+        error: "INVALID_URL",
+        message: validationErr instanceof Error ? validationErr.message : "URL inválida",
+      });
+      return;
+    }
 
     req.log.info({ url }, "Starting generation");
 
