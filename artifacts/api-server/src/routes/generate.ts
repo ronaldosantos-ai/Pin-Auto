@@ -78,12 +78,33 @@ async function scrapeProduct(url: string) {
     "Upgrade-Insecure-Requests": "1",
   };
 
-  const { data } = await axios.get(url, {
-    headers,
-    timeout: 20000,
-    maxRedirects: 10,
-    validateStatus: (status) => status < 500,
-  });
+  let currentUrl = url;
+  let data: string | undefined;
+
+  for (let hop = 0; hop < 10; hop++) {
+    await validatePublicUrl(currentUrl);
+    const response = await axios.get(currentUrl, {
+      headers,
+      timeout: 20000,
+      maxRedirects: 0,
+      validateStatus: (status) => status < 500,
+      responseType: "text",
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers["location"] as string | undefined;
+      if (!location) break;
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+
+    data = response.data as string;
+    break;
+  }
+
+  if (!data) {
+    throw new Error("Too many redirects or no response");
+  }
 
   const $ = cheerio.load(data);
 
