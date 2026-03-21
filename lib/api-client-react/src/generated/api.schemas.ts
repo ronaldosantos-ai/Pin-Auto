@@ -8,3 +8,59 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface GenerateRequest {
+  /** Product URL to scrape and generate assets for */
+  url: string;
+}
+
+export interface ProductData {
+  title: string;
+  price?: string;
+  description?: string;
+  imageUrl?: string;
+  originalUrl: string;
+}
+
+export interface VisionAnalysis {
+  /** Detailed technical description of the product image */
+  technicalDescription: string;
+  /** Prompt used to generate the lifestyle image */
+  imagePrompt: string;
+}
+
+export interface SeoPack {
+  /** 3 SEO-optimized Pinterest titles */
+  titles: string[];
+  /** Pinterest description with conversion triggers */
+  description: string;
+  /** Accessibility alt text for the image */
+  altText: string;
+  /** Urgency overlay text suggestions */
+  urgencyOverlays: string[];
+  /** Hashtags ready to post */
+  hashtags: string;
+}
+
+export interface GenerationResult {
+  id: number;
+  product: ProductData;
+  visionAnalysis: VisionAnalysis;
+  /** URL or base64 of the generated lifestyle image */
+  lifestyleImageUrl?: string;
+  seoPack: SeoPack;
+  createdAt: string;
+}
+
+export interface HistoryItem {
+  id: number;
+  productTitle: string;
+  productImageUrl?: string;
+  originalUrl: string;
+  createdAt: string;
+}
+
+export interface ErrorResponse {
+  error: string;
+  message?: string;
+}

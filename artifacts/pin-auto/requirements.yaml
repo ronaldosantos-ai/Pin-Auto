@@ -1,0 +1,15 @@
+packages:
+  "framer-motion": "For page transitions and scroll-triggered animations"
+  "clsx": "For merging class names in UI components"
+  "tailwind-merge": "For resolving Tailwind class conflicts"
+  "sonner": "For toast notifications (e.g. copied to clipboard)"
+  "date-fns": "For formatting history dates"
+
+images:
+  - path: "artifacts/pin-auto/public/images/hero-bg.png"
+    description: "Deep dark minimalistic abstract gradient mesh with subtle rich red and pure black tones, cinematic atmospheric lighting, suitable for a dark mode premium web app hero background, highly elegant"
+    aspect_ratio: "16:9"
+
+notes:
+  - Using generated Orval hooks from @workspace/api-client-react
+  - The app is forced into dark mode by default for the premium look

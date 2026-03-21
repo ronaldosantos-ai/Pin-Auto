@@ -15,18 +15,38 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **AI**: OpenAI (via Replit AI Integrations) — chat, vision, image generation
+
+## Applications
+
+### PinAuto (`artifacts/pin-auto`)
+
+A Pinterest pin asset generator tool. Users paste a product URL and the AI automatically:
+- Scrapes product data (title, price, description, image) from the URL with a browser-like user agent
+- Falls back to AI inference if scraping is blocked (anti-bot protection)
+- Analyzes the product image with AI vision to generate a detailed technical description
+- Generates a lifestyle image using gpt-image-1
+- Creates a complete SEO pack: 3 Pinterest titles, pin description, alt text, urgency overlays, hashtags
+- Saves everything to the database for history access
+
+Frontend: React + Vite at `/` (preview path)
+- Home page: URL input + feature badges + history list
+- Results page: 4 sections (product, AI analysis, lifestyle image, SEO pack) with copy buttons
 
 ## Structure
 
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server
+│   └── pin-auto/           # PinAuto React + Vite frontend
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
+│   ├── db/                 # Drizzle ORM schema + DB connection
+│   ├── integrations-openai-ai-server/  # OpenAI server-side client
+│   └── integrations-openai-ai-react/   # OpenAI React hooks
 ├── scripts/                # Utility scripts (single workspace package)
 │   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
 ├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
@@ -50,47 +70,55 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 ## Packages
 
+### `artifacts/pin-auto` (`@workspace/pin-auto`)
+
+React + Vite frontend. Uses React Query hooks from `@workspace/api-client-react` for API calls.
+
+- Pages: `src/pages/Home.tsx`, `src/pages/Results.tsx`
+- Components: `src/components/Header.tsx`, `src/components/CopyableText.tsx`
+- Routing: wouter with base URL from `import.meta.env.BASE_URL`
+
 ### `artifacts/api-server` (`@workspace/api-server`)
 
 Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
 
 - Entry: `src/index.ts` — reads `PORT`, starts Express
 - App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+- Routes:
+  - `src/routes/health.ts` — `GET /api/healthz`
+  - `src/routes/generate.ts` — `POST /api/generate` (scrape + AI + image + SEO)
+  - `src/routes/history.ts` — `GET /api/history`, `GET /api/history/:id`
+- Dependencies: `@workspace/db`, `@workspace/api-zod`, `@workspace/integrations-openai-ai-server`, `axios`, `cheerio`
 
 ### `lib/db` (`@workspace/db`)
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
+Database layer using Drizzle ORM with PostgreSQL. 
 
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+- `src/schema/generations.ts` — generations table (id, url, product data, vision analysis, lifestyle image, seo pack, created_at)
+- Run migration: `pnpm --filter @workspace/db run push`
 
 ### `lib/api-spec` (`@workspace/api-spec`)
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
+OpenAPI spec at `openapi.yaml` with endpoints:
+- `POST /generate`
+- `GET /history`
+- `GET /history/{id}`
 
 Run codegen: `pnpm --filter @workspace/api-spec run codegen`
 
 ### `lib/api-zod` (`@workspace/api-zod`)
 
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
+Generated Zod schemas: `GeneratePinAssetsBody`, `GeneratePinAssetsResponse`, `GetHistoryResponse`, `GetGenerationByIdResponse`
 
 ### `lib/api-client-react` (`@workspace/api-client-react`)
 
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
+Generated React Query hooks: `useGeneratePinAssets`, `useGetHistory`, `useGetGenerationById`
+
+### `lib/integrations-openai-ai-server` (`@workspace/integrations-openai-ai-server`)
+
+OpenAI server-side client using Replit AI Integrations (no API key needed from user).
+- Uses `AI_INTEGRATIONS_OPENAI_BASE_URL` and `AI_INTEGRATIONS_OPENAI_API_KEY` env vars
 
 ### `scripts` (`@workspace/scripts`)
 
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`.

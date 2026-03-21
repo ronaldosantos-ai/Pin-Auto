@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: pinAuto
+    description: PinAuto generation operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /generate:
+    post:
+      operationId: generatePinAssets
+      tags: [pinAuto]
+      summary: Generate Pinterest assets from a product URL
+      description: Scrapes product data, analyzes with AI, generates lifestyle image and SEO pack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateRequest"
+      responses:
+        "200":
+          description: Successfully generated assets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationResult"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /history:
+    get:
+      operationId: getHistory
+      tags: [pinAuto]
+      summary: Get generation history
+      description: Returns a list of all previous generations
+      responses:
+        "200":
+          description: List of previous generations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistoryItem"
+
+  /history/{id}:
+    get:
+      operationId: getGenerationById
+      tags: [pinAuto]
+      summary: Get a specific generation result by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Generation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +110,124 @@ components:
       required:
         - status
 
+    GenerateRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          description: Product URL to scrape and generate assets for
+      required:
+        - url
+
+    ProductData:
+      type: object
+      properties:
+        title:
+          type: string
+        price:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+        originalUrl:
+          type: string
+      required:
+        - title
+        - originalUrl
+
+    VisionAnalysis:
+      type: object
+      properties:
+        technicalDescription:
+          type: string
+          description: Detailed technical description of the product image
+        imagePrompt:
+          type: string
+          description: Prompt used to generate the lifestyle image
+      required:
+        - technicalDescription
+        - imagePrompt
+
+    SeoPack:
+      type: object
+      properties:
+        titles:
+          type: array
+          items:
+            type: string
+          description: 3 SEO-optimized Pinterest titles
+        description:
+          type: string
+          description: Pinterest description with conversion triggers
+        altText:
+          type: string
+          description: Accessibility alt text for the image
+        urgencyOverlays:
+          type: array
+          items:
+            type: string
+          description: Urgency overlay text suggestions
+        hashtags:
+          type: string
+          description: Hashtags ready to post
+      required:
+        - titles
+        - description
+        - altText
+        - urgencyOverlays
+        - hashtags
+
+    GenerationResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        product:
+          $ref: "#/components/schemas/ProductData"
+        visionAnalysis:
+          $ref: "#/components/schemas/VisionAnalysis"
+        lifestyleImageUrl:
+          type: string
+          description: URL or base64 of the generated lifestyle image
+        seoPack:
+          $ref: "#/components/schemas/SeoPack"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - product
+        - visionAnalysis
+        - seoPack
+        - createdAt
+
+    HistoryItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        productTitle:
+          type: string
+        productImageUrl:
+          type: string
+        originalUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - productTitle
+        - originalUrl
+        - createdAt
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error

@@ -14,3 +14,105 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Scrapes product data, analyzes with AI, generates lifestyle image and SEO pack
+ * @summary Generate Pinterest assets from a product URL
+ */
+export const GeneratePinAssetsBody = zod.object({
+  url: zod.string().describe("Product URL to scrape and generate assets for"),
+});
+
+export const GeneratePinAssetsResponse = zod.object({
+  id: zod.number(),
+  product: zod.object({
+    title: zod.string(),
+    price: zod.string().optional(),
+    description: zod.string().optional(),
+    imageUrl: zod.string().optional(),
+    originalUrl: zod.string(),
+  }),
+  visionAnalysis: zod.object({
+    technicalDescription: zod
+      .string()
+      .describe("Detailed technical description of the product image"),
+    imagePrompt: zod
+      .string()
+      .describe("Prompt used to generate the lifestyle image"),
+  }),
+  lifestyleImageUrl: zod
+    .string()
+    .optional()
+    .describe("URL or base64 of the generated lifestyle image"),
+  seoPack: zod.object({
+    titles: zod
+      .array(zod.string())
+      .describe("3 SEO-optimized Pinterest titles"),
+    description: zod
+      .string()
+      .describe("Pinterest description with conversion triggers"),
+    altText: zod.string().describe("Accessibility alt text for the image"),
+    urgencyOverlays: zod
+      .array(zod.string())
+      .describe("Urgency overlay text suggestions"),
+    hashtags: zod.string().describe("Hashtags ready to post"),
+  }),
+  createdAt: zod.date(),
+});
+
+/**
+ * Returns a list of all previous generations
+ * @summary Get generation history
+ */
+export const GetHistoryResponseItem = zod.object({
+  id: zod.number(),
+  productTitle: zod.string(),
+  productImageUrl: zod.string().optional(),
+  originalUrl: zod.string(),
+  createdAt: zod.date(),
+});
+export const GetHistoryResponse = zod.array(GetHistoryResponseItem);
+
+/**
+ * @summary Get a specific generation result by ID
+ */
+export const GetGenerationByIdParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetGenerationByIdResponse = zod.object({
+  id: zod.number(),
+  product: zod.object({
+    title: zod.string(),
+    price: zod.string().optional(),
+    description: zod.string().optional(),
+    imageUrl: zod.string().optional(),
+    originalUrl: zod.string(),
+  }),
+  visionAnalysis: zod.object({
+    technicalDescription: zod
+      .string()
+      .describe("Detailed technical description of the product image"),
+    imagePrompt: zod
+      .string()
+      .describe("Prompt used to generate the lifestyle image"),
+  }),
+  lifestyleImageUrl: zod
+    .string()
+    .optional()
+    .describe("URL or base64 of the generated lifestyle image"),
+  seoPack: zod.object({
+    titles: zod
+      .array(zod.string())
+      .describe("3 SEO-optimized Pinterest titles"),
+    description: zod
+      .string()
+      .describe("Pinterest description with conversion triggers"),
+    altText: zod.string().describe("Accessibility alt text for the image"),
+    urgencyOverlays: zod
+      .array(zod.string())
+      .describe("Urgency overlay text suggestions"),
+    hashtags: zod.string().describe("Hashtags ready to post"),
+  }),
+  createdAt: zod.date(),
+});

@@ -5,18 +5,27 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  ErrorResponse,
+  GenerateRequest,
+  GenerationResult,
+  HealthStatus,
+  HistoryItem,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -92,6 +101,256 @@ export function useHealthCheck<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getHealthCheckQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Scrapes product data, analyzes with AI, generates lifestyle image and SEO pack
+ * @summary Generate Pinterest assets from a product URL
+ */
+export const getGeneratePinAssetsUrl = () => {
+  return `/api/generate`;
+};
+
+export const generatePinAssets = async (
+  generateRequest: GenerateRequest,
+  options?: RequestInit,
+): Promise<GenerationResult> => {
+  return customFetch<GenerationResult>(getGeneratePinAssetsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(generateRequest),
+  });
+};
+
+export const getGeneratePinAssetsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generatePinAssets>>,
+    TError,
+    { data: BodyType<GenerateRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generatePinAssets>>,
+  TError,
+  { data: BodyType<GenerateRequest> },
+  TContext
+> => {
+  const mutationKey = ["generatePinAssets"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generatePinAssets>>,
+    { data: BodyType<GenerateRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return generatePinAssets(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GeneratePinAssetsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generatePinAssets>>
+>;
+export type GeneratePinAssetsMutationBody = BodyType<GenerateRequest>;
+export type GeneratePinAssetsMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Generate Pinterest assets from a product URL
+ */
+export const useGeneratePinAssets = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generatePinAssets>>,
+    TError,
+    { data: BodyType<GenerateRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generatePinAssets>>,
+  TError,
+  { data: BodyType<GenerateRequest> },
+  TContext
+> => {
+  return useMutation(getGeneratePinAssetsMutationOptions(options));
+};
+
+/**
+ * Returns a list of all previous generations
+ * @summary Get generation history
+ */
+export const getGetHistoryUrl = () => {
+  return `/api/history`;
+};
+
+export const getHistory = async (
+  options?: RequestInit,
+): Promise<HistoryItem[]> => {
+  return customFetch<HistoryItem[]>(getGetHistoryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetHistoryQueryKey = () => {
+  return [`/api/history`] as const;
+};
+
+export const getGetHistoryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHistory>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getHistory>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetHistoryQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getHistory>>> = ({
+    signal,
+  }) => getHistory({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHistory>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetHistoryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHistory>>
+>;
+export type GetHistoryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get generation history
+ */
+
+export function useGetHistory<
+  TData = Awaited<ReturnType<typeof getHistory>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getHistory>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetHistoryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a specific generation result by ID
+ */
+export const getGetGenerationByIdUrl = (id: number) => {
+  return `/api/history/${id}`;
+};
+
+export const getGenerationById = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GenerationResult> => {
+  return customFetch<GenerationResult>(getGetGenerationByIdUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGenerationByIdQueryKey = (id: number) => {
+  return [`/api/history/${id}`] as const;
+};
+
+export const getGetGenerationByIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGenerationById>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGenerationById>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGenerationByIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGenerationById>>
+  > = ({ signal }) => getGenerationById(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGenerationById>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGenerationByIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGenerationById>>
+>;
+export type GetGenerationByIdQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get a specific generation result by ID
+ */
+
+export function useGetGenerationById<
+  TData = Awaited<ReturnType<typeof getGenerationById>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGenerationById>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGenerationByIdQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
