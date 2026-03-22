@@ -3,7 +3,7 @@ import { resolve as dnsResolve } from "node:dns/promises";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { z } from "zod/v4";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { getTextModel, getImageModel } from "../lib/gemini";
 import { db, generationsTable } from "@workspace/db";
 import { GeneratePinAssetsBody } from "@workspace/api-zod";
 
@@ -183,13 +183,9 @@ async function scrapeProduct(url: string) {
 }
 
 async function generateFromUrlWithAI(url: string) {
-  const response = await openai.chat.completions.create({
-    model: "gpt-5.2",
-    max_completion_tokens: 8192,
-    messages: [
-      {
-        role: "user",
-        content: `Você é um especialista em análise de produtos de e-commerce. A partir desta URL de produto, gere informações plausíveis sobre o produto para criação de conteúdo para Pinterest.
+  const model = getTextModel();
+  const result = await model.generateContent(
+    `Você é um especialista em análise de produtos de e-commerce. A partir desta URL de produto, gere informações plausíveis sobre o produto para criação de conteúdo para Pinterest.
 
 URL: ${url}
 
@@ -202,11 +198,9 @@ Baseie-se no domínio e caminho da URL para inferir o produto. Retorne um JSON c
 }
 
 Retorne APENAS o JSON, sem markdown.`,
-      },
-    ],
-  });
+  );
 
-  const content = response.choices[0]?.message?.content || "{}";
+  const content = result.response.text();
   const data = parseAIJson(ProductAISchema, content);
   return {
     title: data.title || url,
@@ -217,6 +211,28 @@ Retorne APENAS o JSON, sem markdown.`,
   };
 }
 
+async function fetchImageAsBase64(
+  imageUrl: string,
+): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    const response = await axios.get(imageUrl, {
+      responseType: "arraybuffer",
+      timeout: 10000,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      },
+    });
+    const mimeType =
+      (response.headers["content-type"] as string | undefined)?.split(";")[0] ||
+      "image/jpeg";
+    const data = Buffer.from(response.data as ArrayBuffer).toString("base64");
+    return { data, mimeType };
+  } catch {
+    return null;
+  }
+}
+
 async function analyzeProductWithAI(product: {
   title: string;
   price: string;
@@ -224,6 +240,8 @@ async function analyzeProductWithAI(product: {
   imageUrl: string;
   originalUrl: string;
 }) {
+  const model = getTextModel();
+
   const systemPrompt = `Você é um especialista em análise de produtos para Pinterest. Analise este produto e gere uma descrição técnica detalhada da imagem para ser usada como prompt de geração de imagem lifestyle.
 
 Produto: ${product.title}
@@ -239,21 +257,21 @@ Retorne um JSON com:
 
 Retorne APENAS o JSON, sem markdown ou explicações.`;
 
-  const userContent: Parameters<typeof openai.chat.completions.create>[0]["messages"][number]["content"] =
-    product.imageUrl
-      ? [
-          { type: "text", text: systemPrompt },
-          { type: "image_url", image_url: { url: product.imageUrl } },
-        ]
-      : systemPrompt;
+  type Part =
+    | { text: string }
+    | { inlineData: { data: string; mimeType: string } };
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-5.2",
-    max_completion_tokens: 8192,
-    messages: [{ role: "user", content: userContent }],
-  });
+  const parts: Part[] = [{ text: systemPrompt }];
 
-  const content = response.choices[0]?.message?.content || "{}";
+  if (product.imageUrl) {
+    const imageData = await fetchImageAsBase64(product.imageUrl);
+    if (imageData) {
+      parts.push({ inlineData: { data: imageData.data, mimeType: imageData.mimeType } });
+    }
+  }
+
+  const result = await model.generateContent(parts);
+  const content = result.response.text();
   return parseAIJson(VisionAnalysisSchema, content);
 }
 
@@ -264,13 +282,9 @@ async function generateSEOPack(product: {
   originalUrl: string;
   visionAnalysis: { technicalDescription: string };
 }) {
-  const response = await openai.chat.completions.create({
-    model: "gpt-5.2",
-    max_completion_tokens: 8192,
-    messages: [
-      {
-        role: "user",
-        content: `Você é um especialista em SEO para Pinterest e copywriting de alta conversão em português brasileiro. 
+  const model = getTextModel();
+  const result = await model.generateContent(
+    `Você é um especialista em SEO para Pinterest e copywriting de alta conversão em português brasileiro. 
 
 Produto: ${product.title}
 Preço: ${product.price || "N/A"}
@@ -294,26 +308,31 @@ Crie um pacote SEO completo para Pinterest. Retorne APENAS um JSON com esta estr
 }
 
 Retorne APENAS o JSON, sem markdown.`,
-      },
-    ],
-  });
+  );
 
-  const content = response.choices[0]?.message?.content || "{}";
+  const content = result.response.text();
   return parseAIJson(SEOPackSchema, content);
 }
 
 async function generateLifestyleImage(imagePrompt: string): Promise<string | null> {
   try {
-    const response = await openai.images.generate({
-      model: "gpt-image-1",
-      prompt: imagePrompt,
-      size: "1024x1024",
+    const model = getImageModel();
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: imagePrompt }] }],
+      generationConfig: {
+        responseModalities: ["IMAGE", "TEXT"],
+      } as object,
     });
 
-    const data = (response as { data?: Array<{ b64_json?: string }> }).data;
-    const b64 = data?.[0]?.b64_json;
-    if (b64) {
-      return `data:image/png;base64,${b64}`;
+    const candidate = result.response.candidates?.[0];
+    if (!candidate?.content?.parts) return null;
+
+    for (const part of candidate.content.parts) {
+      const inline = (part as { inlineData?: { mimeType?: string; data?: string } })
+        .inlineData;
+      if (inline?.mimeType?.startsWith("image/") && inline.data) {
+        return `data:${inline.mimeType};base64,${inline.data}`;
+      }
     }
     return null;
   } catch {

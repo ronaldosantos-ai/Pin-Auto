@@ -15,7 +15,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
-- **AI**: OpenAI (via Replit AI Integrations) — chat, vision, image generation
+- **AI**: Google Gemini (`@google/generative-ai`) — chat, vision, image generation. Reads `GEMINI_API_KEY` from env
 
 ## Applications
 
@@ -25,7 +25,7 @@ A Pinterest pin asset generator tool. Users paste a product URL and the AI autom
 - Scrapes product data (title, price, description, image) from the URL with a browser-like user agent
 - Falls back to AI inference if scraping is blocked (anti-bot protection)
 - Analyzes the product image with AI vision to generate a detailed technical description
-- Generates a lifestyle image using gpt-image-1
+- Generates a lifestyle image using Gemini image generation (`gemini-2.0-flash-preview-image-generation`)
 - Creates a complete SEO pack: 3 Pinterest titles, pin description, alt text, urgency overlays, hashtags
 - Saves everything to the database for history access
 
@@ -68,6 +68,21 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 - `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
 - `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
 
+## Railway Deployment
+
+The app is configured for deployment on Railway via `railway.toml` in the repo root.
+
+**How it works in production:**
+- Build: installs deps, builds the Vite frontend, then bundles the Express API with esbuild
+- Start: runs `drizzle-kit push` (schema migration) then starts the Express server
+- The Express server serves both the API (`/api/*`) and the static Vite frontend (SPA fallback)
+- `NODE_ENV=production` must be set in Railway to activate static file serving
+
+**Required environment variables on Railway:**
+- `DATABASE_URL` — PostgreSQL connection string (provisioned in Railway)
+- `GEMINI_API_KEY` — Google Gemini API key (set in Railway Variables)
+- `PORT` — set automatically by Railway
+
 ## Packages
 
 ### `artifacts/pin-auto` (`@workspace/pin-auto`)
@@ -88,7 +103,8 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
   - `src/routes/health.ts` — `GET /api/healthz`
   - `src/routes/generate.ts` — `POST /api/generate` (scrape + AI + image + SEO)
   - `src/routes/history.ts` — `GET /api/history`, `GET /api/history/:id`
-- Dependencies: `@workspace/db`, `@workspace/api-zod`, `@workspace/integrations-openai-ai-server`, `axios`, `cheerio`
+- Dependencies: `@workspace/db`, `@workspace/api-zod`, `@google/generative-ai`, `axios`, `cheerio`
+- AI client: `src/lib/gemini.ts` — lazy-initialised `GoogleGenerativeAI` client, exposes `getTextModel()` and `getImageModel()`
 
 ### `lib/db` (`@workspace/db`)
 
@@ -113,11 +129,6 @@ Generated Zod schemas: `GeneratePinAssetsBody`, `GeneratePinAssetsResponse`, `Ge
 ### `lib/api-client-react` (`@workspace/api-client-react`)
 
 Generated React Query hooks: `useGeneratePinAssets`, `useGetHistory`, `useGetGenerationById`
-
-### `lib/integrations-openai-ai-server` (`@workspace/integrations-openai-ai-server`)
-
-OpenAI server-side client using Replit AI Integrations (no API key needed from user).
-- Uses `AI_INTEGRATIONS_OPENAI_BASE_URL` and `AI_INTEGRATIONS_OPENAI_API_KEY` env vars
 
 ### `scripts` (`@workspace/scripts`)
 
