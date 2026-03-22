@@ -3,7 +3,7 @@ import { resolve as dnsResolve } from "node:dns/promises";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { z } from "zod/v4";
-import { getTextModel, getImageModel } from "../lib/gemini";
+import { getTextModel, getGeminiApiKey } from "../lib/gemini";
 import { db, generationsTable } from "@workspace/db";
 import { GeneratePinAssetsBody } from "@workspace/api-zod";
 
@@ -339,24 +339,48 @@ Retorne APENAS o JSON, sem markdown.`,
   return parseAIJson(SEOPackSchema, content);
 }
 
+interface GeminiInlineData {
+  mimeType: string;
+  data: string;
+}
+
+interface GeminiPart {
+  text?: string;
+  inlineData?: GeminiInlineData;
+}
+
+interface GeminiImageResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: GeminiPart[];
+    };
+  }>;
+  error?: {
+    message?: string;
+  };
+}
+
 async function generateLifestyleImage(imagePrompt: string): Promise<string | null> {
   try {
-    const model = getImageModel();
-    const result = await model.generateContent({
+    const apiKey = getGeminiApiKey();
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
+
+    const body = {
       contents: [{ role: "user", parts: [{ text: imagePrompt }] }],
-      generationConfig: {
-        responseModalities: ["IMAGE", "TEXT"],
-      } as object,
+      generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+    };
+
+    const response = await axios.post<GeminiImageResponse>(url, body, {
+      timeout: 60000,
+      headers: { "Content-Type": "application/json" },
     });
 
-    const candidate = result.response.candidates?.[0];
-    if (!candidate?.content?.parts) return null;
+    const parts = response.data.candidates?.[0]?.content?.parts;
+    if (!parts) return null;
 
-    for (const part of candidate.content.parts) {
-      const inline = (part as { inlineData?: { mimeType?: string; data?: string } })
-        .inlineData;
-      if (inline?.mimeType?.startsWith("image/") && inline.data) {
-        return `data:${inline.mimeType};base64,${inline.data}`;
+    for (const part of parts) {
+      if (part.inlineData?.mimeType?.startsWith("image/") && part.inlineData.data) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
     }
     return null;
