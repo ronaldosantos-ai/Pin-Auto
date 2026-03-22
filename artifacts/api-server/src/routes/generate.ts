@@ -211,23 +211,48 @@ Retorne APENAS o JSON, sem markdown.`,
   };
 }
 
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
 async function fetchImageAsBase64(
   imageUrl: string,
 ): Promise<{ data: string; mimeType: string } | null> {
   try {
+    await validatePublicUrl(imageUrl);
+
     const response = await axios.get(imageUrl, {
       responseType: "arraybuffer",
       timeout: 10000,
+      maxRedirects: 0,
+      validateStatus: (status) => status < 500,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        Accept: "image/*",
       },
     });
-    const mimeType =
-      (response.headers["content-type"] as string | undefined)?.split(";")[0] ||
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers["location"] as string | undefined;
+      if (location) {
+        await validatePublicUrl(new URL(location, imageUrl).toString());
+      }
+      return null;
+    }
+
+    const contentType =
+      (response.headers["content-type"] as string | undefined)?.split(";")[0]?.trim() ||
       "image/jpeg";
-    const data = Buffer.from(response.data as ArrayBuffer).toString("base64");
-    return { data, mimeType };
+    if (!contentType.startsWith("image/")) {
+      return null;
+    }
+
+    const buffer = response.data as ArrayBuffer;
+    if (buffer.byteLength > MAX_IMAGE_BYTES) {
+      return null;
+    }
+
+    const data = Buffer.from(buffer).toString("base64");
+    return { data, mimeType: contentType };
   } catch {
     return null;
   }
