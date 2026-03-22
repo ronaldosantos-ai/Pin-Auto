@@ -23,6 +23,6 @@ export function getTextModel(modelName = "gemini-2.5-flash"): GenerativeModel {
 
 export function getImageModel(): GenerativeModel {
   return getClient().getGenerativeModel({
-    model: "gemini-2.0-flash-preview-image-generation",
+    model: "gemini-2.5-flash-image",
   });
 }

@@ -43,7 +43,11 @@ if (process.env.NODE_ENV === "production") {
 
   app.use(express.static(frontendDir));
 
-  app.use((_req, res) => {
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api")) {
+      next();
+      return;
+    }
     res.sendFile(path.join(frontendDir, "index.html"));
   });
 }

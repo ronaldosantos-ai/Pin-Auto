@@ -5,7 +5,7 @@ import path from "path";
 
 const isReplit = !!process.env.REPL_ID;
 
-const port = Number(process.env.PORT || "5173");
+const port = Number(process.env.PORT || "3000");
 const basePath = process.env.BASE_PATH || "/";
 
 const plugins = [
