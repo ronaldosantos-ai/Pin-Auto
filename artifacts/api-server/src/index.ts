@@ -1,6 +1,13 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 
+if (!process.env["GEMINI_API_KEY"]) {
+  throw new Error(
+    "GEMINI_API_KEY environment variable is required but was not provided. " +
+      "Set it in your Railway project Variables.",
+  );
+}
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
