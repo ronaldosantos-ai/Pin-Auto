@@ -4,10 +4,10 @@ import type { GenerativeModel } from "@google/generative-ai";
 let _client: GoogleGenerativeAI | null = null;
 
 function getApiKey(): string {
-  const apiKey = process.env["GEMINI_API_KEY"];
+  const apiKey = process.env["GOOGLE_API_KEY"];
   if (!apiKey) {
     throw new Error(
-      "GEMINI_API_KEY environment variable is required but was not provided. " +
+      "GOOGLE_API_KEY environment variable is required but was not provided. " +
         "Set it in your Railway project Variables.",
     );
   }
