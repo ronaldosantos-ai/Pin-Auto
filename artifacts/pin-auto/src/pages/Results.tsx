@@ -1,16 +1,48 @@
+import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { motion, type Variants } from "framer-motion";
 import { useGetGenerationById } from "@workspace/api-client-react";
-import { ArrowLeft, ExternalLink, Box, Sparkles, Image as ImageIcon, Type, ShoppingBag, Loader2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Box, Sparkles, Image as ImageIcon, Type, ShoppingBag, Loader2, RefreshCw } from "lucide-react";
 import { Header } from "@/components/Header";
 import { CopyableText } from "@/components/CopyableText";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
+const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 export default function Results() {
   const [, params] = useRoute("/results/:id");
   const id = params?.id ? Number(params.id) : 0;
 
   const { data: result, isLoading, isError } = useGetGenerationById(id);
+
+  const [lifestyleImageUrl, setLifestyleImageUrl] = useState<string | null | undefined>(undefined);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const currentImageUrl = lifestyleImageUrl !== undefined ? lifestyleImageUrl : result?.lifestyleImageUrl;
+
+  async function handleRegenerate() {
+    if (!id || isRegenerating) return;
+    setIsRegenerating(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/regenerate-image/${id}`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { message?: string };
+        throw new Error(body.message ?? "Erro ao regenerar imagem");
+      }
+      const data = await res.json() as { lifestyleImageUrl: string | null };
+      setLifestyleImageUrl(data.lifestyleImageUrl);
+      if (data.lifestyleImageUrl) {
+        toast.success("Nova imagem gerada com sucesso!");
+      } else {
+        toast.error("A IA não conseguiu gerar a imagem desta vez. Tente novamente.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao regenerar imagem");
+    } finally {
+      setIsRegenerating(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -119,12 +151,32 @@ export default function Results() {
 
           {/* Section 3: Lifestyle Image */}
           <motion.section variants={itemVariants}>
-            <SectionHeader icon={<ImageIcon className="w-5 h-5" />} title="Imagem Lifestyle" subtitle="Prompt e imagem gerada por IA" />
+            <div className="flex items-center justify-between">
+              <SectionHeader icon={<ImageIcon className="w-5 h-5" />} title="Imagem Lifestyle" subtitle="Prompt e imagem gerada por IA" />
+              <button
+                onClick={handleRegenerate}
+                disabled={isRegenerating}
+                className={cn(
+                  "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border",
+                  "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                <RefreshCw className={cn("w-4 h-4", isRegenerating && "animate-spin")} />
+                {isRegenerating ? "Gerando..." : "Gerar nova imagem"}
+              </button>
+            </div>
             <div className="mt-4 bg-card rounded-3xl border border-border overflow-hidden shadow-lg shadow-black/10">
-              {result.lifestyleImageUrl ? (
+              {isRegenerating ? (
+                <div className="aspect-video w-full bg-secondary flex items-center justify-center flex-col text-muted-foreground p-6 text-center">
+                  <Loader2 className="w-10 h-10 mb-4 animate-spin text-primary" />
+                  <p className="font-medium">Gerando nova imagem lifestyle...</p>
+                  <p className="text-sm mt-1 opacity-70">Isso pode levar até 30 segundos</p>
+                </div>
+              ) : currentImageUrl ? (
                 <div className="aspect-[4/5] sm:aspect-video w-full bg-secondary relative">
                   <img 
-                    src={result.lifestyleImageUrl} 
+                    src={currentImageUrl} 
                     alt="Lifestyle gerado" 
                     className="absolute inset-0 w-full h-full object-cover"
                   />
@@ -132,7 +184,8 @@ export default function Results() {
               ) : (
                 <div className="aspect-video w-full bg-secondary flex items-center justify-center flex-col text-muted-foreground p-6 text-center">
                   <ImageIcon className="w-12 h-12 mb-4 opacity-50" />
-                  <p>A imagem lifestyle não pôde ser gerada ou está indisponível.</p>
+                  <p>A imagem lifestyle não pôde ser gerada.</p>
+                  <p className="text-sm mt-1 opacity-70">Clique em "Gerar nova imagem" para tentar novamente.</p>
                 </div>
               )}
               <div className="p-6 border-t border-border">

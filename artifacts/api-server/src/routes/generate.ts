@@ -4,6 +4,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { z } from "zod/v4";
 import { getTextModel, getGeminiApiKey } from "../lib/gemini";
+import { eq } from "drizzle-orm";
 import { db, generationsTable } from "@workspace/db";
 import { GeneratePinAssetsBody } from "@workspace/api-zod";
 
@@ -388,6 +389,48 @@ async function generateLifestyleImage(imagePrompt: string): Promise<string | nul
     return null;
   }
 }
+
+router.post("/regenerate-image/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id || Number.isNaN(id)) {
+    res.status(400).json({ error: "INVALID_ID", message: "ID inválido" });
+    return;
+  }
+
+  try {
+    const [generation] = await db
+      .select()
+      .from(generationsTable)
+      .where(eq(generationsTable.id, id))
+      .limit(1);
+
+    if (!generation) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Geração não encontrada" });
+      return;
+    }
+
+    const visionAnalysis = generation.visionAnalysis as { imagePrompt: string };
+    const imagePrompt = visionAnalysis?.imagePrompt;
+
+    if (!imagePrompt) {
+      res.status(400).json({ error: "NO_PROMPT", message: "Prompt de imagem não disponível" });
+      return;
+    }
+
+    req.log.info({ id }, "Regenerating lifestyle image");
+    const lifestyleImageUrl = await generateLifestyleImage(imagePrompt);
+
+    await db
+      .update(generationsTable)
+      .set({ lifestyleImageUrl: lifestyleImageUrl || null })
+      .where(eq(generationsTable.id, id));
+
+    res.json({ lifestyleImageUrl: lifestyleImageUrl || null });
+  } catch (err) {
+    req.log.error({ err }, "Regeneration failed");
+    res.status(500).json({ error: "REGENERATION_FAILED", message: "Falha ao regenerar imagem. Tente novamente." });
+  }
+});
 
 router.post("/generate", async (req, res) => {
   try {
